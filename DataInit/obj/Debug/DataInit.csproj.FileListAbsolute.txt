@@ -1,0 +1,6 @@
+F:\Code\指数计算\IndexCalculate\DataInit\bin\Debug\DataInit.exe.config
+F:\Code\指数计算\IndexCalculate\DataInit\bin\Debug\DataInit.exe
+F:\Code\指数计算\IndexCalculate\DataInit\bin\Debug\DataInit.pdb
+F:\Code\指数计算\IndexCalculate\DataInit\obj\Debug\DataInit.csprojResolveAssemblyReference.cache
+F:\Code\指数计算\IndexCalculate\DataInit\obj\Debug\DataInit.exe
+F:\Code\指数计算\IndexCalculate\DataInit\obj\Debug\DataInit.pdb

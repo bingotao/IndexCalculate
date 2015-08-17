@@ -1,0 +1,10 @@
+F:\Code\指数计算\IndexCalculate\IndexCalculate\bin\Debug\IndexCalculate.exe.config
+F:\Code\指数计算\IndexCalculate\IndexCalculate\bin\Debug\IndexCalculate.exe
+F:\Code\指数计算\IndexCalculate\IndexCalculate\bin\Debug\IndexCalculate.pdb
+F:\Code\指数计算\IndexCalculate\IndexCalculate\obj\Debug\IndexCalculate.csprojResolveAssemblyReference.cache
+F:\Code\指数计算\IndexCalculate\IndexCalculate\obj\Debug\IndexCalculate.indexCalculate.resources
+F:\Code\指数计算\IndexCalculate\IndexCalculate\obj\Debug\IndexCalculate.Properties.Resources.resources
+F:\Code\指数计算\IndexCalculate\IndexCalculate\obj\Debug\IndexCalculate.csproj.GenerateResource.Cache
+F:\Code\指数计算\IndexCalculate\IndexCalculate\obj\Debug\IndexCalculate.exe
+F:\Code\指数计算\IndexCalculate\IndexCalculate\obj\Debug\IndexCalculate.pdb
+F:\Code\指数计算\IndexCalculate\IndexCalculate\bin\Debug\MathNet.Numerics.dll
