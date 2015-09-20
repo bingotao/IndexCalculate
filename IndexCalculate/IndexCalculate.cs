@@ -7,8 +7,11 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Aspose.Cells;
+using MathNet.Numerics;
 
 namespace IndexCalculate
 {
@@ -18,15 +21,18 @@ namespace IndexCalculate
         private string s_outputPath = string.Empty;
         private DataTable dt_timeScale = null;
         private DataTable dt_timeLag = null;
-
+        private SpatialMatrixType Type = SpatialMatrixType.Complete;
         private string sSQLGetZD = "select * from ZDLocation";
         private string sSQLGetZDValue = "select * from IndexValues";
         private string sConnectionString = @"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={0};User Id=admin;Password=;";
+        BackgroundWorker bw = null;
 
         public indexCalculate()
         {
             InitializeComponent();
             BindTable();
+            SetDefaultPath();
+            InitBackgroundWorker();
         }
 
         private void BindTable()
@@ -42,7 +48,7 @@ namespace IndexCalculate
 
             foreach (DataGridViewColumn dc in this.dg_timeScaleRanage.Columns)
             {
-                dc.Width = 60;
+                dc.Width = 50;
             }
 
             this.dt_timeLag = new DataTable();
@@ -56,10 +62,34 @@ namespace IndexCalculate
 
             foreach (DataGridViewColumn dc in this.dg_timeLagRanage.Columns)
             {
-                dc.Width = 60;
+                dc.Width = 50;
             }
         }
 
+        private void SetDefaultPath()
+        {
+            string sCurrentPath = Environment.CurrentDirectory;
+            string[] files = Directory.GetFiles(sCurrentPath, "*.mdb");
+            if (files.Length > 0)
+            {
+                string sFile = files[0];
+                string sFileName = Path.Combine(sCurrentPath, sFile);
+                this.s_databasePath = sFileName;
+                this.lb_databasePath.Text = sFileName;
+            }
+            this.s_outputPath = sCurrentPath;
+            this.lb_outputPath.Text = sCurrentPath;
+        }
+
+        private void InitBackgroundWorker()
+        {
+            this.bw = new BackgroundWorker();
+            this.bw.WorkerSupportsCancellation = true;
+            this.bw.WorkerReportsProgress = true;
+            this.bw.DoWork += new DoWorkEventHandler(Execute);
+            this.bw.ProgressChanged += new ProgressChangedEventHandler(Progress);
+            this.bw.RunWorkerCompleted += new RunWorkerCompletedEventHandler(End);
+        }
 
         private void btn_openDatabase_Click(object sender, EventArgs e)
         {
@@ -92,54 +122,149 @@ namespace IndexCalculate
             }
         }
 
+        private void Execute(object sender, DoWorkEventArgs e)
+        {
+            try
+            {
+                Condtions conditions = this.GetConditions();
+                string sErrorMsg = string.Empty;
+                if (conditions.MDBPath == string.Empty)
+                {
+                    sErrorMsg = "尚未设置数据源！";
+                }
+                else if (conditions.TimelagRange.Rows.Count == 0)
+                {
+                    sErrorMsg = "尚未设置TimeLag！";
+                }
+                else if (conditions.TimescaleRange.Rows.Count == 0)
+                {
+                    sErrorMsg = "尚未设置TimeScale！";
+                }
+                if (sErrorMsg != string.Empty)
+                {
+                    this.bw.ReportProgress(0, sErrorMsg);
+                }
+                else
+                {
+                    DateTime begin = DateTime.Now;
+                    Caculate(conditions);
+                    DateTime end = DateTime.Now;
+                    TimeSpan timeSpan = end - begin;
+                    this.bw.ReportProgress(0, string.Format("共耗时：{0}", timeSpan));
+                }
+            }
+            catch (System.Exception ex)
+            {
+                this.bw.ReportProgress(0, ex.Message);
+            }
+        }
+
+        private void Progress(object sender, ProgressChangedEventArgs e)
+        {
+            this.lbMessage.Text = e.UserState.ToString();
+        }
+
+        private void End(object sender, AsyncCompletedEventArgs e)
+        {
+            if (e.UserState != null)
+            {
+                this.lbMessage.Text = e.UserState.ToString();
+            }
+            this.btn_create.Enabled = true;
+            this.btnGetMoran.Enabled = true;
+        }
+
         private void btn_create_Click(object sender, EventArgs e)
         {
-            Condtions conditions = this.GetConditions();
-            bool b = true;
-            string sErrorMsg = string.Empty;
-            //if (string.IsNullOrEmpty(condition.OutputFolder))
-            //{
-            //    sErrorMsg = "输出路径尚未设置！";
-            //}
-            //else 
-            if (string.IsNullOrEmpty(conditions.MDBPath))
+            Workbook workbook = new Workbook();
+            Worksheet sheet = workbook.Worksheets[0];
+            Cells cells = sheet.Cells;
+            double[] dArray = ARFIMASeriesGenerator.CreateNormalSeries(139.63, 103.96, 1000);
+            double[] dARDIMA = ARFIMASeriesGenerator.CreateARFIMASeries(dArray, 0.1);
+
+            for (int i = 0; i < dARDIMA.Length; i++)
             {
-                sErrorMsg = "数据库文件尚未选择！";
-            }
-            else if (conditions.Type == MatrType.None)
-            {
-                sErrorMsg = "尚未选择任何类型！";
+                cells[i, 0].PutValue(dARDIMA[i]);
             }
 
-
-            if (sErrorMsg.Length != 0)
-            {
-                MessageBox.Show(sErrorMsg);
-                return;
-            }
-
-            Test(conditions);
+            string sOutPath = Path.Combine(Environment.CurrentDirectory, string.Format("test.xls"));
+            workbook.Save(sOutPath);
         }
 
-        private void Test(Condtions condtions)
+        private void Caculate(Condtions condtions)
         {
+            this.bw.ReportProgress(0, string.Format("正在准备数据..."));
+
+            DataTable dtTimeLagRange = condtions.TimelagRange;
+            DataTable dtTimeScaleRange = condtions.TimescaleRange;
+            List<int> listTimeLag = GetRangeList(dtTimeLagRange);
+            List<int> listTimeScale = GetRangeList(dtTimeScaleRange);
             string sConStr = string.Format(this.sConnectionString, condtions.MDBPath);
             OleDbDataAdapter dbAdapter1 = new OleDbDataAdapter(this.sSQLGetZD, sConStr);
-            DataTable ZDLocations = new DataTable();
-            dbAdapter1.Fill(ZDLocations);
+            DataTable dtSiteLocation = new DataTable();
+            dbAdapter1.Fill(dtSiteLocation);
             OleDbDataAdapter dbAdapter2 = new OleDbDataAdapter(this.sSQLGetZDValue, sConStr);
-            DataTable ZDValues = new DataTable();
-            dbAdapter2.Fill(ZDValues);
-            DataTable dtTimelagRange = condtions.TimelagRange;
-            foreach (DataRow drTimelagRagRange in dtTimelagRange.Rows)
+            DataTable dtSiteSeries = new DataTable();
+            dbAdapter2.Fill(dtSiteSeries);
+
+
+            Workbook workbook = new Workbook();
+            Worksheet sheet = workbook.Worksheets[0];
+            Cells cells = sheet.Cells;
+
+            this.bw.ReportProgress(0, string.Format("正在计算..."));
+            double[,] SpatialWeightMatrix = DTSTI.GetSpatialWeightMatrix(dtSiteLocation, condtions.Type, condtions.Lambda);
+            double[] OriginalSpatioTemporalSeries = DTSTI.GetOriginalSpatioTemporalSeries(dtSiteSeries);
+            double[] IntegratedOriginalSpatioTemporalSeries = DTSTI.GetIntegratedSeries(OriginalSpatioTemporalSeries);
+
+            int iRow = 1;
+            for (int i = 0; i < listTimeScale.Count; i++)
             {
+                int iTimeScale = listTimeScale[i];
 
+                cells[iRow, 0].PutValue(iTimeScale);
+                int iColumn = 1;
 
+                for (int j = 0; j < listTimeLag.Count; j++)
+                {
+                    int iTimeLag = listTimeLag[j];
+                    cells[0, iColumn].PutValue(iTimeLag);
 
-
+                    double[,] TemporalWeightMatrix = DTSTI.GetTemporalWeightMatrix(dtSiteSeries.Rows.Count / dtSiteLocation.Rows.Count, iTimeLag);
+                    double[] LaggedSpatioTemporalSeries = DTSTI.GetLaggedSpatioTemporalSeries(OriginalSpatioTemporalSeries, SpatialWeightMatrix, TemporalWeightMatrix);
+                    double[] IntegratedLaggedSpatioTemporalSeries = DTSTI.GetIntegratedSeries(LaggedSpatioTemporalSeries);
+                    double DTSTIValue = DTSTI.GetDetrend(IntegratedOriginalSpatioTemporalSeries, IntegratedLaggedSpatioTemporalSeries, iTimeScale);
+                    this.bw.ReportProgress(0, string.Format("TimeScale:{1},TimeLag:{0},DTSTI:{2}", iTimeLag, iTimeScale, DTSTIValue));
+                    cells[iRow, iColumn].PutValue(DTSTIValue);
+                    iColumn++;
+                }
+                iRow++;
             }
+            System.IO.MemoryStream ms = workbook.SaveToStream();
+            byte[] bt = ms.ToArray();
+            string sOutPath = Path.Combine(condtions.OutputFolder, string.Format("{0}(Lambda={1}).xls", (condtions.Type == SpatialMatrixType.Complete ? "Complete" : "Mixtrue"), condtions.Lambda));
+            workbook.Save(sOutPath);
         }
 
+        private List<int> GetRangeList(DataTable dtRange)
+        {
+            List<int> list = new List<int>();
+            int iRowCount = dtRange.Rows.Count;
+            foreach (DataRow dr in dtRange.Rows)
+            {
+                int iMin = (int)dr[0];
+                int iMax = (int)dr[1];
+                int iInteral = (int)dr[2];
+                for (; iMin < iMax; iMin += iInteral)
+                {
+                    list.Add(iMin);
+                }
+                list.Add(iMax);
+            }
+            list = list.Distinct().ToList();
+            list.Sort();
+            return list;
+        }
 
         private Condtions GetConditions()
         {
@@ -148,36 +273,34 @@ namespace IndexCalculate
             conditions.MDBPath = this.s_databasePath;
             conditions.TimescaleRange = this.dt_timeScale;
             conditions.TimelagRange = this.dt_timeLag;
-            conditions.Type = GetMatrType();
+            conditions.Type = this.Type;
             conditions.Lambda = (double)this.nudLambda.Value;
             return conditions;
         }
 
-        private MatrType GetMatrType()
+        private void cbxMoran_CheckedChanged(object sender, EventArgs e)
         {
-            MatrType Type = MatrType.None;
-            bool cCkd = this.cb_type_complete.Checked;
-            bool mCkd = this.cb_type_mixture.Checked;
-            if (cCkd && mCkd)
+            bool bChecked = this.cbxMoran.Checked;
+            if (bChecked)
             {
-                Type = MatrType.Both;
+                this.numMoranTimeLag.Enabled = true;
+                this.numMoranTimeScale.Enabled = true;
+                this.btnGetMoran.Enabled = true;
             }
-            else if (cCkd)
+            else
             {
-                Type = MatrType.Complete;
+                this.numMoranTimeLag.Enabled = false;
+                this.numMoranTimeScale.Enabled = false;
+                this.btnGetMoran.Enabled = false;
             }
-            else if (mCkd)
-            {
-                Type = MatrType.Mixture;
-            }
-            return Type;
+        }
+
+        private void rb_CheckedChanged(object sender, EventArgs e)
+        {
+            Type = sender.Equals(this.rb_complete) ? SpatialMatrixType.Complete : SpatialMatrixType.Mixture;
         }
     }
 
-    public enum MatrType
-    {
-        None = -1, Complete = 0, Mixture = 1, Both = 2
-    }
 
     public class Condtions
     {
@@ -185,7 +308,7 @@ namespace IndexCalculate
         public string MDBPath = string.Empty;
         public DataTable TimescaleRange = null;
         public DataTable TimelagRange = null;
-        public MatrType Type = MatrType.Complete;
+        public SpatialMatrixType Type = SpatialMatrixType.Complete;
         public double Lambda = 0;
     }
 }

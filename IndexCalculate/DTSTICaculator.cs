@@ -17,32 +17,31 @@ namespace IndexCalculate
         private static string s_ZDValueX = "X";
         private static string s_ZDValueY = "Y";
 
-        private static int ZDCount = 0;
-        private static int SJCount = 0;
-        private static int TimeH = 0;
+        private static int ZDCount = 0;//站点个数
+        private static int SJCount = 0;//时间长度
+        private static int TimeH = 0;//时间跨度
 
 
-        private static double[] oVector = null;
-        private static double oVectorAverage = 0;
-        private static double[] newoVector = null;
+        public static double[] oVector = null;//原时空序列
+        public static double oVectorAverage = 0;//原始序列平均值
+        public static double[] newoVector = null;//新时空序列
 
-        public double lagVectorAverage = 0;
-        public double[] lagVector = null;
-        public double[] newlagVector = null;
+        public double lagVectorAverage = 0;//滞后时空序列平均值
+        public double[] lagVector = null;//滞后时空序列
+        public double[] newlagVector = null;//新滞后时空序列
 
-        public static double[,] disMatrA = null;
-        public static double[,] disMatrB = null;
+        public static double[,] disMatrA = null;//A类空间相互作用矩阵
+        public static double[,] disMatrB = null;//B类空间相互作用矩阵
 
-        public double[,] timeMatr = null;
-        public double[,] timedisMatr = null;
-
+        public double[,] timeMatr = null;//时间相互作用矩阵
+        public double[,] timedisMatr = null;//时空相互作用矩阵
 
         public DTSTICaculator()
         {
 
         }
 
-        public DTSTICaculator(DataTable dtZDValues, MatrType type, DataTable dtZDLocation, double lambda, int timeH)
+        public DTSTICaculator(DataTable dtZDValues, SpatialMatrixType type, DataTable dtZDLocation, double lambda, int timeH)
         {
             if (disMatrA == null || disMatrB == null)
             {
@@ -61,7 +60,7 @@ namespace IndexCalculate
             this.newlagVector = GetNewVector(lagVector, lagVectorAverage);
         }
 
-       
+
         public DataTable GetDetrend(DataTable dtTimescale)
         {
             DataTable dtResults = new DataTable();
@@ -78,12 +77,14 @@ namespace IndexCalculate
         /// 获取消趋势协方差
         /// </summary>
         /// <returns></returns>
-        private double GetDetrend(int timeScale)
+        public double GetDetrend(int timeScale)
         {
+            //窗口跨度
             int iTimeScaleLength = timeScale + 1;
+            //窗口个数
             int iTimeScaleCount = ZDCount * SJCount - timeScale;
-            double[] dFxyLO = new double[iTimeScaleCount];
-            double[] dFxyOO = new double[iTimeScaleCount];
+            double[] dFxyLO = new double[iTimeScaleCount];//每个窗口的计算值
+            double[] dFxyOO = new double[iTimeScaleCount];//每个窗口的计算值
             double dFxySumLO = 0;
             double dFxySumOO = 0;
             for (int i = 0; i < iTimeScaleCount; i++)
@@ -98,8 +99,8 @@ namespace IndexCalculate
                     yOSeries[j] = newoVector[i + j];
                 }
 
-                double[] Labcd = Fit.Polynomial(xSeries, yLSeries, 3);
-                double[] Oabcd = Fit.Polynomial(xSeries, yOSeries, 3);
+                double[] Labcd = Fit.Polynomial(xSeries, yLSeries, 3);//3次多项式拟合求系数
+                double[] Oabcd = Fit.Polynomial(xSeries, yOSeries, 3);//3次多项式拟合求系数
 
                 double dSumLO = 0;
                 double dSumOO = 0;
@@ -123,7 +124,7 @@ namespace IndexCalculate
         }
 
         /// <summary>
-        /// 获取新时空序列
+        /// 获取新时空序列，老的时空序列-老的时空序列的平均值
         /// </summary>
         /// <param name="vector"></param>
         /// <param name="average"></param>
@@ -156,7 +157,7 @@ namespace IndexCalculate
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
-        public double[] GetLagVector(MatrType type)
+        public double[] GetLagVector(SpatialMatrixType type)
         {
             int iLength = ZDCount * SJCount;
             double[] lagVector = new double[iLength];
@@ -182,10 +183,15 @@ namespace IndexCalculate
         private static double[] GetOrignVector(DataTable dtZDValues)
         {
             DataView dv = dtZDValues.DefaultView;
+            /* 根据站点ID以及X值排序，以确保序列的正确性
+            先按站点排，再按站点时间排
+            Rx={x(1, 1), x(1, 2), x(1, 3), …, x(1, T), x(2, 1), x(2, 2), x(2, 3), …, x(2, T), ..., x(P, i), ..., x(N, T)}
+            P为站点，T为时间
+            这里的实际降雨数据中N=9个站点，T=1095长度的序列 */
             dv.Sort = string.Format(@"{0} asc,{1} asc", s_ZDValueID, s_ZDValueX);
             DataTable dt = dv.ToTable();
+            /* 创建序列 */
             oVector = new double[dtZDValues.Rows.Count];
-
             for (int i = 0; i < dtZDValues.Rows.Count; i++)
             {
                 oVector[i] = (double)dtZDValues.Rows[i][s_ZDValueY];
@@ -194,7 +200,7 @@ namespace IndexCalculate
         }
 
         /// <summary>
-        /// 获取原始序列平均值
+        /// 获取序列平均值
         /// </summary>
         /// <param name="oVector"></param>
         /// <returns></returns>
@@ -213,12 +219,13 @@ namespace IndexCalculate
         /// 获取时空权重矩阵
         /// </summary>
         /// <returns></returns>
-        public List<List<double>> GetTimeDisMatr(MatrType matrType)
+        public List<List<double>> GetTimeDisMatr(SpatialMatrixType SpatialMatrixType)
         {
             int iLength = ZDCount * SJCount;
             List<List<double>> matr = new List<List<double>>();
 
-            double[,] disMatr = matrType == MatrType.Complete ? disMatrA : disMatrB;
+            double[,] disMatr = SpatialMatrixType == SpatialMatrixType.Complete ? disMatrA : disMatrB;
+            //下三角矩阵
             for (int i = 0; i < iLength; i++)
             {
                 List<double> m = new List<double>();
@@ -235,6 +242,7 @@ namespace IndexCalculate
             }
 
             List<double> rSum = new List<double>();
+            //标准化
             for (int i = 0; i < iLength; i++)
             {
                 double dSum = 0;
@@ -242,17 +250,22 @@ namespace IndexCalculate
                 {
                     dSum += i < j ? matr[j][i] : matr[i][j];
                 }
+                rSum.Add(dSum);
+            }
 
-                for (int n = 0; n <= i; n++)
+            for (int i = 0; i < iLength; i++)
+            {
+                for (int j = 0; j < matr[i].Count; j++)
                 {
-                    matr[i][n] = matr[i][n] / dSum;
+                    matr[i][j] = matr[i][j] / rSum[i];
                 }
             }
             return matr;
         }
 
         /// <summary>
-        /// 获取时间权重矩阵
+        /// 获取时间相互作用矩阵
+        /// 超过一定的时间跨度，相互作用为0，否则为1
         /// </summary>
         /// <param name="iMatrLength"></param>
         /// <param name="timeH"></param>
@@ -279,7 +292,7 @@ namespace IndexCalculate
         /// <returns></returns>
         private static double[,] GetZDDistanceMatrixA(DataTable dtZDLocation, double lambda)
         {
-            return GetZDDistanceMatrix(dtZDLocation, MatrType.Complete, lambda);
+            return GetZDDistanceMatrix(dtZDLocation, SpatialMatrixType.Complete, lambda);
         }
 
 
@@ -292,20 +305,21 @@ namespace IndexCalculate
         /// <returns></returns>
         private static double[,] GetZDDistanceMatrixB(DataTable dtZDLocation, double lambda)
         {
-            return GetZDDistanceMatrix(dtZDLocation, MatrType.Mixture, lambda);
+            return GetZDDistanceMatrix(dtZDLocation, SpatialMatrixType.Mixture, lambda);
         }
 
 
         /// <summary>
-        /// 空间权重矩阵计算
+        /// 空间相互作用矩阵
         /// </summary>
         /// <param name="dtZDLocation"></param>
         /// <param name="type"></param>
         /// <param name="lambda"></param>
         /// <returns></returns>
-        private static double[,] GetZDDistanceMatrix(DataTable dtZDLocation, MatrType type, double lambda)
+        private static double[,] GetZDDistanceMatrix(DataTable dtZDLocation, SpatialMatrixType type, double lambda)
         {
             DataView dv = dtZDLocation.DefaultView;
+            /* 按站点代码排序 */
             dv.Sort = s_DICMATR_ZDDM + " asc";
             DataTable dt = dv.ToTable();
             int iCount = dt.Rows.Count;
@@ -313,22 +327,26 @@ namespace IndexCalculate
             for (int i = 0; i < iCount; i++)
             {
                 DataRow drI = dt.Rows[i];
+                /* 计算单位为千米 */
                 double xi = (double)drI[s_DICMATR_X] / 1000;
                 double yi = (double)drI[s_DICMATR_Y] / 1000;
                 for (int j = 0; j < iCount; j++)
                 {
-                    DataRow drJ = dt.Rows[j];
-                    double xj = (double)drJ[s_DICMATR_X] / 1000;
-                    double yj = (double)drJ[s_DICMATR_Y] / 1000;
-                    double dis = Math.Sqrt((xi - xj) * (xi - xj) + (yi - yj) * (yi - yj));
-                    matr[i, j] = Math.Exp(-dis / lambda);
-                }
-            }
-            if (type == MatrType.Complete)
-            {
-                for (int i = 0; i < iCount; i++)
-                {
-                    matr[i, i] = 0;
+                    /* 同一个站点，空间距离为0，根据类型不同取值不同 */
+                    if (i == j)
+                    {
+                        matr[i, i] = type == SpatialMatrixType.Complete ? 0 : 1;
+                    }
+                    else
+                    {
+                        DataRow drJ = dt.Rows[j];
+                        double xj = (double)drJ[s_DICMATR_X] / 1000;
+                        double yj = (double)drJ[s_DICMATR_Y] / 1000;
+                        //距离值
+                        double dis = Math.Sqrt((xi - xj) * (xi - xj) + (yi - yj) * (yi - yj));
+                        //空间相互作用值
+                        matr[i, j] = Math.Exp(-dis / lambda);
+                    }
                 }
             }
             return matr;
